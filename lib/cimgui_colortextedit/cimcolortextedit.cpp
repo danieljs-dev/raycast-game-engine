@@ -35,5 +35,15 @@ CIMGUI_API void ImColorTextEdit_TextEditor_SetText(TextEditor* self, const char 
 
 CIMGUI_API const char* ImColorTextEdit_TextEditor_GetText(TextEditor* self)
 {
-    return self->GetText().c_str();
+    /*
+     * IMPORTANT: TextEditor::GetText() returns a std::string by value.
+     * Returning c_str() from that temporary would dangle and corrupt callers.
+     * Keep a stable buffer per-thread.
+     */
+    static thread_local std::string	stable;
+
+    if (!self)
+        return "";
+    stable = self->GetText();
+    return stable.c_str();
 }

@@ -105,16 +105,21 @@ static bool	write_file_text(const char *path, const char *text)
 {
 	FILE	*fp;
 	size_t	len;
+	std::string	tmp;
 
 	if (!path || !text)
 		return (false);
-	fp = std::fopen(path, "wb");
+	tmp = std::string(path) + ".tmp";
+	fp = std::fopen(tmp.c_str(), "wb");
 	if (!fp)
 		return (false);
 	len = std::strlen(text);
 	if (len > 0 && std::fwrite(text, 1, len, fp) != len)
-		return (std::fclose(fp), false);
-	std::fclose(fp);
+		return (std::fclose(fp), std::remove(tmp.c_str()), false);
+	if (std::fclose(fp) != 0)
+		return (std::remove(tmp.c_str()), false);
+	if (std::rename(tmp.c_str(), path) != 0)
+		return (std::remove(tmp.c_str()), false);
 	return (true);
 }
 
@@ -830,7 +835,8 @@ static void	ui_script_editor(t_editor *ed)
 		if (want_save)
 		{
 			const char	*txt = ImColorTextEdit_TextEditor_GetText(ed->script_editor);
-			if (txt && write_file_text(ed->script_open_path.c_str(), txt))
+			std::string	copy = txt ? std::string(txt) : std::string();
+			if (!copy.empty() && write_file_text(ed->script_open_path.c_str(), copy.c_str()))
 				logf(ed, "script saved: %s", ed->script_open_path.c_str());
 			else
 				logf(ed, "script save failed: %s", ed->script_open_path.c_str());
