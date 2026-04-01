@@ -38,6 +38,7 @@ int	editor_runtime_init(t_editor_runtime *rt, mlx_t *mlx,
 	engine->app.mlx.ptr = mlx;
 	engine->app.mlx.win = NULL;
 	engine->app.running = 1;
+	lua_engine_set_mlx(&engine->lua, mlx);
 	if (!framebuffer_init(&engine->app))
 		return (engine_destroy(engine), free(engine), 0);
 	if (init_loaded_textures(&engine->app) != 0)
@@ -82,6 +83,7 @@ void	editor_runtime_tick(t_editor_runtime *rt, double dt)
 {
 	if (!rt || !rt->engine)
 		return ;
+	lua_engine_begin_frame(&rt->engine->lua);
 	if (!rt->play_mode)
 		return ;
 	engine_tick(rt->engine, dt);

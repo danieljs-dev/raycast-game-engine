@@ -98,6 +98,7 @@ static int	entity_from_json(t_entity_store *store, t_prefab_db *prefabs,
 			return (0);
 		if (!lua_script_load(lua, (t_lua_script *)e->script, e->script_path))
 			return (free(e->script), e->script = NULL, 0);
+		lua_script_apply_exports(lua, (t_lua_script *)e->script, e, 0);
 		lua_call_init(lua, (t_lua_script *)e->script, e->id);
 		lua_call_ready(lua, (t_lua_script *)e->script, e->id);
 	}

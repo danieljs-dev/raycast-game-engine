@@ -54,6 +54,7 @@ static void	loop_hook(void *param)
 	t_engine	*engine;
 
 	engine = (t_engine *)param;
+	lua_engine_begin_frame(&engine->lua);
 	engine_tick(engine, ((mlx_t *)engine->app.mlx.ptr)->delta_time);
 	render_frame_core(&engine->app);
 }
@@ -79,6 +80,7 @@ int	main(int argc, char **argv)
 		app_destroy(&engine.app);
 		return (1);
 	}
+	lua_engine_set_mlx(&engine.lua, (mlx_t *)engine.app.mlx.ptr);
 	mlx_key_hook(engine.app.mlx.ptr, on_key, &engine.app);
 	mlx_close_hook(engine.app.mlx.ptr, on_destroy, &engine.app);
 	mlx_loop_hook(engine.app.mlx.ptr, loop_hook, &engine);

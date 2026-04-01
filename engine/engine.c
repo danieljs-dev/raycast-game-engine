@@ -208,6 +208,7 @@ static int	create_player_entity(t_engine *engine, const char *prefab)
 		return (0);
 	e->transform.rot = spawn_rot(engine->app.spawn_dir);
 	engine->player_id = e->id;
+	lua_engine_set_player_id(&engine->lua, engine->player_id);
 	if (e->script_path)
 	{
 		script = ft_calloc(1, sizeof(*script));
@@ -216,6 +217,7 @@ static int	create_player_entity(t_engine *engine, const char *prefab)
 		if (!lua_script_load(&engine->lua, script, e->script_path))
 			return (free(script), 0);
 		e->script = script;
+		lua_script_apply_exports(&engine->lua, script, e, 0);
 		lua_call_init(&engine->lua, script, e->id);
 		lua_call_ready(&engine->lua, script, e->id);
 	}
@@ -245,6 +247,7 @@ int	engine_load_project(t_engine *engine, const char *project_path)
 		return (json_free(root), ft_print_error("invalid colors"), 0);
 	if (!load_map(&engine->file, json_obj_get(root, "map")))
 		return (json_free(root), ft_print_error("invalid map"), 0);
+	lua_engine_set_world(&engine->lua, &engine->file);
 	if (validate_map_closed(&engine->file) != 0)
 		return (json_free(root), 0);
 	if (validate_player_spawn(&engine->app, &engine->file) != 0)
@@ -360,9 +363,27 @@ int	engine_reload_scripts(t_engine *engine)
 	uint32_t	id;
 	t_entity	*e;
 	t_lua_script	*s;
+	mlx_t		*mlx;
 
 	if (!engine)
 		return (0);
+	mlx = NULL;
+	if (engine->app.mlx.ptr)
+		mlx = (mlx_t *)engine->app.mlx.ptr;
+	id = 1;
+	while (id < engine->scene.store.next_id)
+	{
+		e = entity_get(&engine->scene.store, id);
+		if (e && e->script)
+			lua_script_unload(&engine->lua, (t_lua_script *)e->script);
+		id++;
+	}
+	lua_engine_destroy(&engine->lua);
+	if (!lua_engine_init(&engine->lua, &engine->scene.store))
+		return (0);
+	lua_engine_set_world(&engine->lua, &engine->file);
+	lua_engine_set_player_id(&engine->lua, engine->player_id);
+	lua_engine_set_mlx(&engine->lua, mlx);
 	id = 1;
 	while (id < engine->scene.store.next_id)
 	{
@@ -374,9 +395,9 @@ int	engine_reload_scripts(t_engine *engine)
 			if (!e->script)
 				return (0);
 			s = (t_lua_script *)e->script;
-			lua_script_unload(&engine->lua, s);
 			if (!lua_script_load(&engine->lua, s, e->script_path))
 				return (0);
+			lua_script_apply_exports(&engine->lua, s, e, 0);
 			lua_call_init(&engine->lua, s, e->id);
 			lua_call_ready(&engine->lua, s, e->id);
 		}

@@ -15,7 +15,10 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include <MLX42/MLX42.h>
+
 #include "engine/scene/entity.h"
+#include "structs.h"
 #include "libft.h"
 
 #include <lua.h>
@@ -50,18 +53,179 @@ static int	l_entity_move(lua_State *L)
 	return (0);
 }
 
+static int	l_entity_rotate(lua_State *L)
+{
+	t_lua_engine	*lua;
+	uint32_t		id;
+	double			drot;
+	t_entity		*e;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua || !lua->store)
+		return (0);
+	id = (uint32_t)luaL_checkinteger(L, 1);
+	drot = (double)luaL_checknumber(L, 2);
+	e = entity_get(lua->store, id);
+	if (e)
+		entity_rotate(e, drot);
+	return (0);
+}
+
+static int	l_world_is_wall(lua_State *L)
+{
+	t_lua_engine	*lua;
+	int			x;
+	int			y;
+	char			c;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua || !lua->world || !lua->world->map)
+		return (lua_pushboolean(L, 1), 1);
+	x = (int)luaL_checkinteger(L, 1);
+	y = (int)luaL_checkinteger(L, 2);
+	if (x < 0 || y < 0 || y >= lua->world->map_height || x >= lua->world->map_width)
+		return (lua_pushboolean(L, 1), 1);
+	if (!lua->world->map[y])
+		return (lua_pushboolean(L, 1), 1);
+	if (x >= (int)ft_strlen(lua->world->map[y]))
+		return (lua_pushboolean(L, 1), 1);
+	c = lua->world->map[y][x];
+	return (lua_pushboolean(L, c == '1'), 1);
+}
+
+static int	l_player_id(lua_State *L)
+{
+	t_lua_engine	*lua;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua)
+		return (lua_pushinteger(L, 0), 1);
+	return (lua_pushinteger(L, (lua_Integer)lua->player_id), 1);
+}
+
+static int	l_input_is_key_down(lua_State *L)
+{
+	t_lua_engine	*lua;
+	int			key;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua || !lua->mlx)
+		return (lua_pushboolean(L, 0), 1);
+	key = (int)luaL_checkinteger(L, 1);
+	return (lua_pushboolean(L, mlx_is_key_down(lua->mlx, (keys_t)key)), 1);
+}
+
+static int	l_audio_play(lua_State *L)
+{
+	(void)L;
+	return (0);
+}
+
+static int	ui_track_image(t_lua_engine *lua, void *img)
+{
+	void	**n;
+	int		cap;
+	int		i;
+
+	if (!lua || !img)
+		return (0);
+	if (lua->ui_count + 1 <= lua->ui_cap)
+	{
+		lua->ui_images[lua->ui_count++] = img;
+		return (1);
+	}
+	cap = lua->ui_cap;
+	if (cap < 8)
+		cap = 8;
+	while (cap < lua->ui_count + 1)
+		cap *= 2;
+	n = (void **)ft_calloc((size_t)cap, sizeof(*n));
+	if (!n)
+		return (0);
+	i = 0;
+	while (i < lua->ui_count)
+	{
+		n[i] = lua->ui_images[i];
+		i++;
+	}
+	free(lua->ui_images);
+	lua->ui_images = n;
+	lua->ui_cap = cap;
+	lua->ui_images[lua->ui_count++] = img;
+	return (1);
+}
+
+static int	l_ui_draw_text(lua_State *L)
+{
+	t_lua_engine	*lua;
+	int			x;
+	int			y;
+	const char		*text;
+	mlx_image_t		*img;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua || !lua->mlx)
+		return (0);
+	x = (int)luaL_checkinteger(L, 1);
+	y = (int)luaL_checkinteger(L, 2);
+	text = luaL_checkstring(L, 3);
+	img = mlx_put_string(lua->mlx, text, x, y);
+	if (img)
+		ui_track_image(lua, img);
+	return (0);
+}
+
 static void	register_engine_api(t_lua_engine *lua)
 {
 	lua_State	*L;
 
 	L = (lua_State *)lua->L;
 	lua_newtable(L);
+
 	/* engine.entity */
 	lua_newtable(L);
 	lua_pushlightuserdata(L, lua);
 	lua_pushcclosure(L, l_entity_move, 1);
 	lua_setfield(L, -2, "move");
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_entity_rotate, 1);
+	lua_setfield(L, -2, "rotate");
 	lua_setfield(L, -2, "entity");
+
+	/* engine.world */
+	lua_newtable(L);
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_world_is_wall, 1);
+	lua_setfield(L, -2, "is_wall");
+	lua_setfield(L, -2, "world");
+
+	/* engine.player */
+	lua_newtable(L);
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_player_id, 1);
+	lua_setfield(L, -2, "id");
+	lua_setfield(L, -2, "player");
+
+	/* engine.input */
+	lua_newtable(L);
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_input_is_key_down, 1);
+	lua_setfield(L, -2, "is_key_down");
+	lua_setfield(L, -2, "input");
+
+	/* engine.audio */
+	lua_newtable(L);
+	lua_pushcfunction(L, l_audio_play);
+	lua_setfield(L, -2, "play");
+	lua_setfield(L, -2, "audio");
+
+	/* engine.ui */
+	lua_newtable(L);
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_ui_draw_text, 1);
+	lua_setfield(L, -2, "draw_text");
+	lua_setfield(L, -2, "ui");
+
 	lua_setglobal(L, "engine");
 }
 
@@ -78,6 +242,12 @@ int	lua_engine_init(t_lua_engine *lua, t_entity_store *store)
 	luaL_openlibs(L);
 	lua->L = (void *)L;
 	lua->store = store;
+	lua->mlx = NULL;
+	lua->world = NULL;
+	lua->player_id = 0;
+	lua->ui_images = NULL;
+	lua->ui_count = 0;
+	lua->ui_cap = 0;
 	register_engine_api(lua);
 	return (1);
 }
@@ -86,9 +256,52 @@ void	lua_engine_destroy(t_lua_engine *lua)
 {
 	if (!lua)
 		return ;
+	lua_engine_begin_frame(lua);
+	free(lua->ui_images);
+	lua->ui_images = NULL;
+	lua->ui_cap = 0;
 	if (lua->L)
 		lua_close((lua_State *)lua->L);
 	ft_bzero(lua, sizeof(*lua));
+}
+
+void	lua_engine_set_mlx(t_lua_engine *lua, mlx_t *mlx)
+{
+	if (!lua)
+		return ;
+	lua->mlx = mlx;
+}
+
+void	lua_engine_set_world(t_lua_engine *lua, t_file *world)
+{
+	if (!lua)
+		return ;
+	lua->world = world;
+}
+
+void	lua_engine_set_player_id(t_lua_engine *lua, uint32_t id)
+{
+	if (!lua)
+		return ;
+	lua->player_id = id;
+}
+
+void	lua_engine_begin_frame(t_lua_engine *lua)
+{
+	int		i;
+	mlx_image_t	*img;
+
+	if (!lua || !lua->mlx || !lua->ui_images)
+		return ;
+	i = 0;
+	while (i < lua->ui_count)
+	{
+		img = (mlx_image_t *)lua->ui_images[i];
+		if (img)
+			mlx_delete_image(lua->mlx, img);
+		i++;
+	}
+	lua->ui_count = 0;
 }
 
 static int	setup_env(lua_State *L)
@@ -171,6 +384,85 @@ static void	call_entity_fn(t_lua_engine *lua, t_lua_script *script,
 		lua_log(lua_tostring(L, -1));
 		lua_pop(L, 1);
 	}
+}
+
+static int	push_exports_table(lua_State *L, int env_idx)
+{
+	int		pairs;
+
+	if (!L)
+		return (0);
+	lua_getfield(L, env_idx, "export");
+	if (lua_type(L, -1) == LUA_TTABLE)
+		return (1);
+	lua_pop(L, 1);
+	lua_pushnil(L);
+	pairs = 0;
+	while (lua_next(L, env_idx) != 0)
+	{
+		pairs++;
+		if (lua_type(L, -1) == LUA_TTABLE)
+		{
+			lua_getfield(L, -1, "export");
+			if (lua_type(L, -1) == LUA_TTABLE)
+			{
+				lua_remove(L, -2);
+				lua_remove(L, -2);
+				return (1);
+			}
+			lua_pop(L, 1);
+		}
+		lua_pop(L, 1);
+		if (pairs > 128)
+			break ;
+	}
+	return (0);
+}
+
+int	lua_script_apply_exports(t_lua_engine *lua, t_lua_script *script,
+			t_entity *ent, int overwrite)
+{
+	lua_State	*L;
+	int			env_idx;
+	int			exp_idx;
+	const char		*k;
+	int			t;
+	t_property		*cur;
+
+	if (!lua || !script || !ent || script->env_ref == 0)
+		return (0);
+	L = (lua_State *)lua->L;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, script->env_ref);
+	env_idx = lua_gettop(L);
+	if (!push_exports_table(L, env_idx))
+		return (lua_pop(L, 1), 1);
+	exp_idx = lua_gettop(L);
+	lua_pushnil(L);
+	while (lua_next(L, exp_idx) != 0)
+	{
+		k = lua_tostring(L, -2);
+		t = lua_type(L, -1);
+		cur = NULL;
+		if (k && k[0] == '_' && k[1] == '_')
+			cur = (t_property *)1;
+		if (k && !cur && !overwrite)
+			cur = prop_get(ent->properties, k);
+		if (k && !cur)
+		{
+			if (t == LUA_TNUMBER)
+				prop_set_number(&ent->properties, k,
+					(double)lua_tonumber(L, -1));
+			else if (t == LUA_TBOOLEAN)
+				prop_set_bool(&ent->properties, k,
+					(int)lua_toboolean(L, -1));
+			else if (t == LUA_TSTRING)
+				prop_set_string(&ent->properties, k,
+					lua_tostring(L, -1));
+		}
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 2);
+	return (1);
 }
 
 void	lua_call_init(t_lua_engine *lua, t_lua_script *script, uint32_t id)

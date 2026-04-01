@@ -409,6 +409,11 @@ static void	ui_inspector(t_editor *ed)
 	p = e->properties;
 	while (p)
 	{
+		if (p->key && p->key[0] == '_' && p->key[1] == '_')
+		{
+			p = p->next;
+			continue ;
+		}
 		if (p->type == PROP_NUMBER)
 		{
 			float f = (float)p->v.n;
