@@ -230,6 +230,18 @@ static int	l_entity_instantiate(lua_State *L)
 	prefab = luaL_checkstring(L, 1);
 	x = (double)luaL_checknumber(L, 2);
 	y = (double)luaL_checknumber(L, 3);
+	if (!lua->prefabs)
+		return (lua_log_ex(lua, "engine.entity.instantiate failed: prefabs not set"),
+			lua_pushinteger(L, 0), 1);
+	if (!prefab_db_get(lua->prefabs, prefab))
+	{
+		char	buf[256];
+		snprintf(buf, sizeof(buf),
+			"engine.entity.instantiate failed: prefab not found: %s",
+			prefab ? prefab : "(null)");
+		lua_log_ex(lua, buf);
+		return (lua_pushinteger(L, 0), 1);
+	}
 	id = lua_engine_entity_instantiate(lua, prefab, x, y);
 	lua_pushinteger(L, (lua_Integer)id);
 	return (1);

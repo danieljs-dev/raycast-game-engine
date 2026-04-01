@@ -1,0 +1,8 @@
+{
+	"name": "enemy",
+	"type": "enemy",
+	"properties": {
+		"hp": 100,
+		"speed": 1.0
+	}
+}
