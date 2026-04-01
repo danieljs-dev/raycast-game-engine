@@ -106,32 +106,30 @@ static void	gl_tex_update(t_editor *ed, const mlx_image_t *img)
 		GL_RGBA, GL_UNSIGNED_BYTE, img->pixels);
 }
 
-static void	ui_toolbar(t_editor *ed)
+static void	ui_toolbar_bar(t_editor *ed)
 {
 	bool		play;
-	int			want_save;
-	int			want_reload;
-	int			want_export;
+	bool		want_save;
+	bool		want_reload;
+	bool		want_export;
 	t_engine	*engine;
 
 	engine = editor_runtime_engine(&ed->rt);
 	play = (ed->rt.play_mode != 0);
-	want_save = 0;
-	want_reload = 0;
-	want_export = 0;
-	igBegin("Toolbar", NULL, ImGuiWindowFlags_NoResize);
-	if (igButton(play ? "Stop" : "Run", v2(0, 0)))
+	want_save = false;
+	want_reload = false;
+	want_export = false;
+	if (ImGui::Button(play ? "Stop" : "Run"))
 	{
 		editor_runtime_set_play_mode(&ed->rt, !play);
 		logf(ed, "play_mode=%s", !play ? "on" : "off");
 	}
-	igSameLine(0, 8);
-	want_save = igButton("Save project", v2(0, 0));
-	igSameLine(0, 8);
-	want_reload = igButton("Reload scripts", v2(0, 0));
-	igSameLine(0, 8);
-	want_export = igButton("Build/Export", v2(0, 0));
-	igEnd();
+	ImGui::SameLine(0.0f, 8.0f);
+	want_save = ImGui::Button("Save");
+	ImGui::SameLine(0.0f, 8.0f);
+	want_reload = ImGui::Button("Reload scripts");
+	ImGui::SameLine(0.0f, 8.0f);
+	want_export = ImGui::Button("Build/Export");
 	if (engine && want_save)
 	{
 		if (!engine_save_scene(engine) || !engine_save_project(engine))
@@ -163,6 +161,69 @@ static void	ui_toolbar(t_editor *ed)
 	}
 }
 
+static void	ui_dockspace(t_editor *ed)
+{
+	ImGuiWindowFlags	flags;
+	ImGuiViewport		*vp;
+	ImGuiID				dockspace_id;
+	static bool			built = false;
+
+	(void)ed;
+	flags = ImGuiWindowFlags_NoDocking
+		| ImGuiWindowFlags_NoTitleBar
+		| ImGuiWindowFlags_NoCollapse
+		| ImGuiWindowFlags_NoResize
+		| ImGuiWindowFlags_NoMove
+		| ImGuiWindowFlags_NoBringToFrontOnFocus
+		| ImGuiWindowFlags_NoNavFocus
+		| ImGuiWindowFlags_MenuBar;
+	vp = ImGui::GetMainViewport();
+	ImGui::SetNextWindowPos(vp->Pos);
+	ImGui::SetNextWindowSize(vp->Size);
+	ImGui::SetNextWindowViewport(vp->ID);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+	ImGui::Begin("DockSpaceHost", NULL, flags);
+	ImGui::PopStyleVar(2);
+	if (ImGui::BeginMenuBar())
+	{
+		ui_toolbar_bar(ed);
+		ImGui::EndMenuBar();
+	}
+	dockspace_id = ImGui::GetID("DockSpace");
+	ImGui::DockSpace(dockspace_id, ImVec2(0, 0),
+		ImGuiDockNodeFlags_PassthruCentralNode);
+	if (!built)
+	{
+		ImGuiID	left;
+		ImGuiID	right;
+		ImGuiID	bottom;
+		ImGuiID	center;
+
+		built = true;
+		ImGui::DockBuilderRemoveNode(dockspace_id);
+		ImGui::DockBuilderAddNode(dockspace_id,
+			ImGuiDockNodeFlags_DockSpace);
+		ImGui::DockBuilderSetNodeSize(dockspace_id, vp->Size);
+		center = dockspace_id;
+		left = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left, 0.20f,
+			NULL, &center);
+		right = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.26f,
+			NULL, &center);
+		bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.28f,
+			NULL, &center);
+		ImGui::DockBuilderDockWindow("Hierarchy", left);
+		ImGui::DockBuilderDockWindow("Inspector", right);
+		ImGui::DockBuilderDockWindow("Scene", center);
+		ImGui::DockBuilderDockWindow("Scene View", center);
+		ImGui::DockBuilderDockWindow("Content Drawer", bottom);
+		ImGui::DockBuilderDockWindow("Console", bottom);
+		ImGui::DockBuilderDockWindow("File System", bottom);
+		ImGui::DockBuilderFinish(dockspace_id);
+	}
+	ImGui::End();
+}
+
 static void	ui_preview(t_editor *ed)
 {
 	ImVec2	avail;
@@ -170,7 +231,7 @@ static void	ui_preview(t_editor *ed)
 	float	w;
 	float	h;
 
-	igBegin("3D Preview", NULL, 0);
+	igBegin("Scene", NULL, 0);
 	avail = ImGui::GetContentRegionAvail();
 	if (ed->preview_tex != 0 && ed->preview_w > 0 && ed->preview_h > 0)
 	{
@@ -293,7 +354,7 @@ static void	ui_entities(t_editor *ed)
 	char		label[128];
 
 	engine = editor_runtime_engine(&ed->rt);
-	igBegin("Entities", NULL, 0);
+	igBegin("Hierarchy", NULL, 0);
 	if (!engine)
 		return (igEnd());
 	id = 1;
@@ -397,7 +458,7 @@ static void	ui_assets(t_editor *ed)
 	int					i;
 
 	(void)ed;
-	igBegin("Asset Browser", NULL, 0);
+	igBegin("Content Drawer", NULL, 0);
 	items.clear();
 	list_dir_simple("assets", items);
 	igText("assets/");
@@ -473,7 +534,7 @@ static void	ui_console(t_editor *ed)
 {
 	int	i;
 
-	igBegin("Console / Logs", NULL, 0);
+	igBegin("Console", NULL, 0);
 	i = 0;
 	while (i < (int)ed->logs.size())
 	{
@@ -499,7 +560,7 @@ static void	editor_frame(void *param)
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	igNewFrame();
-	ui_toolbar(ed);
+	ui_dockspace(ed);
 	ui_preview(ed);
 	ui_scene_view(ed);
 	ui_entities(ed);
@@ -531,6 +592,10 @@ static int	editor_init(t_editor *ed)
 	ctx = igCreateContext(NULL);
 	if (!ctx)
 		return (0);
+	{
+		ImGuiIO	&io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+	}
 	win = (GLFWwindow *)ed->mlx->window;
 	if (!ImGui_ImplGlfw_InitForOpenGL(win, true))
 		return (0);
