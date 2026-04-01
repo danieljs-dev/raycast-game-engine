@@ -59,6 +59,14 @@ dkms.conf
 compile_commands.json
 build
 cub3D
+/editor
+imgui.ini
+dist/
+tests_bin
+coverage.json
+
+# generated textures
+assets/textures/*.xpm42
 
 # minilibx test binaries
 lib/minilibx-linux/test/mlx-test
