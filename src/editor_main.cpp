@@ -457,6 +457,10 @@ static void	ui_entities(t_editor *ed)
 	uint32_t				new_id;
 	t_entity				*anchor;
 	uint32_t				anchor_id;
+	t_entity				*sel;
+	bool					can_edit_sel;
+	bool					want_delete;
+	bool					want_duplicate;
 
 	engine = editor_runtime_engine(&ed->rt);
 	igBegin("Hierarchy", NULL, 0);
@@ -523,6 +527,73 @@ static void	ui_entities(t_editor *ed)
 		}
 		else
 			logf(ed, "instantiate failed: %s", add_prefab.c_str());
+	}
+
+	/* Selected entity actions */
+	sel = entity_get(&engine->scene.store, ed->selected_entity);
+	can_edit_sel = (sel != NULL && sel->id != 0 && sel->id != engine->player_id);
+	want_delete = false;
+	want_duplicate = false;
+	if (!sel)
+		ImGui::TextUnformatted("Selected: (none)");
+	else if (sel->id == engine->player_id)
+		ImGui::Text("Selected: %u (player)", sel->id);
+	else
+		ImGui::Text("Selected: %u", sel->id);
+	ImGui::SameLine(0.0f, 8.0f);
+	want_duplicate = ImGui::Button("Duplicate") && can_edit_sel;
+	ImGui::SameLine(0.0f, 8.0f);
+	want_delete = ImGui::Button("Delete") && can_edit_sel;
+	if (want_duplicate && sel && sel->type)
+	{
+		new_id = lua_engine_entity_instantiate(&engine->lua,
+			sel->type, sel->transform.x, sel->transform.y);
+		if (new_id != 0)
+		{
+			t_entity	*ne;
+			t_property	*prop;
+
+			ne = entity_get(&engine->scene.store, new_id);
+			if (ne)
+			{
+				ne->transform.rot = sel->transform.rot;
+				ne->parent_id = sel->parent_id;
+				prop = sel->properties;
+				while (prop)
+				{
+					if (prop->key && prop->key[0] == '_' && prop->key[1] == '_')
+					{
+						prop = prop->next;
+						continue ;
+					}
+					if (prop->type == PROP_NUMBER)
+						prop_set_number(&ne->properties, prop->key, prop->v.n);
+					else if (prop->type == PROP_BOOL)
+						prop_set_bool(&ne->properties, prop->key, prop->v.b);
+					else if (prop->type == PROP_STRING)
+						prop_set_string(&ne->properties, prop->key, prop->v.s);
+					prop = prop->next;
+				}
+			}
+			ed->selected_entity = new_id;
+			logf(ed, "entity duplicated: %u -> %u", sel->id, new_id);
+		}
+		else
+			logf(ed, "duplicate failed: %s", sel->type);
+	}
+	if (want_delete && sel)
+	{
+		uint32_t del_id = sel->id;
+		if (sel->script)
+		{
+			lua_call_destroy(&engine->lua, (t_lua_script *)sel->script, sel->id);
+			lua_script_unload(&engine->lua, (t_lua_script *)sel->script);
+			free(sel->script);
+			sel->script = NULL;
+		}
+		entity_destroy(&engine->scene.store, del_id);
+		ed->selected_entity = engine->player_id;
+		logf(ed, "entity deleted: %u", del_id);
 	}
 	igSeparator();
 
