@@ -11,6 +11,7 @@
 /* ************************************************************************** */
 
 #include "cub3d.h"
+#include "engine/engine.h"
 
 static void	app_destroy(t_app *app)
 {
@@ -50,51 +51,39 @@ static int	app_init(t_app *app)
 
 static void	loop_hook(void *param)
 {
-	render_frame((t_app *)param);
-}
+	t_engine	*engine;
 
-static int	parse_setup(t_app *app, t_file *file, int argc, char **argv)
-{
-	ft_bzero(app, sizeof(*app));
-	if (parse_cub_file(argc, argv, file) != 0)
-		return (1);
-	if (parse_textures(app, file) != 0
-		|| parse_colors(app, file) != 0
-		|| parse_map(file) != 0
-		|| validate_map_closed(file) != 0
-		|| validate_player_spawn(app, file) != 0
-		|| player_init(app) != 0)
-	{
-		free_textures(&app->tex);
-		free_file(file);
-		return (1);
-	}
-	return (0);
+	engine = (t_engine *)param;
+	engine_tick(engine, ((mlx_t *)engine->app.mlx.ptr)->delta_time);
+	render_frame_core(&engine->app);
 }
 
 int	main(int argc, char **argv)
 {
-	t_app	app;
-	t_file	file;
+	t_engine	engine;
+	const char	*project;
 
-	if (parse_setup(&app, &file, argc, argv) != 0)
-		return (1);
-	app.file = &file;
-	if (!app_init(&app))
+	project = "maps/level01.json";
+	if (argc == 2)
+		project = argv[1];
+	if (argc != 1 && argc != 2)
+		return (ft_print_error("usage: ./cub3D [project.json]"));
+	if (!engine_init(&engine))
+		return (ft_print_error("engine init failed"));
+	if (!engine_load_project(&engine, project))
+		return (engine_destroy(&engine), 1);
+	engine.app.file = &engine.file;
+	if (!app_init(&engine.app))
 	{
-		free_textures(&app.tex);
-		free_file(&file);
-		app_destroy(&app);
+		engine_destroy(&engine);
+		app_destroy(&engine.app);
 		return (1);
 	}
-	mlx_key_hook(app.mlx.ptr, on_key, &app);
-	mlx_close_hook(app.mlx.ptr, on_destroy, &app);
-	mlx_loop_hook(app.mlx.ptr, loop_hook, &app);
-	if (PLAYER_TERM_DEBUG)
-		player_debug_term(&app);
-	mlx_loop(app.mlx.ptr);
-	free_textures(&app.tex);
-	free_file(&file);
-	app_destroy(&app);
+	mlx_key_hook(engine.app.mlx.ptr, on_key, &engine.app);
+	mlx_close_hook(engine.app.mlx.ptr, on_destroy, &engine.app);
+	mlx_loop_hook(engine.app.mlx.ptr, loop_hook, &engine);
+	mlx_loop(engine.app.mlx.ptr);
+	engine_destroy(&engine);
+	app_destroy(&engine.app);
 	return (0);
 }

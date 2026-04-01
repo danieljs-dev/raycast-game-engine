@@ -62,6 +62,15 @@ void	render_frame(t_app *app)
 	if (!app->frame.ptr)
 		return ;
 	player_update(app);
+	render_frame_core(app);
+}
+
+void	render_frame_core(t_app *app)
+{
+	if (!app || !app->mlx.ptr)
+		return ;
+	if (!app->frame.ptr)
+		return ;
 	draw_background(app);
 	render_walls(app);
 	if (FPS_DISPLAY)

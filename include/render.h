@@ -36,6 +36,7 @@ void	fps_draw(t_app *app);
 
 int		framebuffer_init(t_app *app);
 void	render_frame(t_app *app);
+void	render_frame_core(t_app *app);
 int		init_loaded_textures(t_app *app);
 int		player_init(t_app *app);
 int		player_move(t_app *app, double dx, double dy);

@@ -1,0 +1,8 @@
+{
+  "name": "player",
+  "type": "player",
+  "script": "scripts/player.lua",
+  "properties": {
+    "speed": 2.0
+  }
+}
