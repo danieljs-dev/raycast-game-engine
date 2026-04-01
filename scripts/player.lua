@@ -4,7 +4,13 @@ export = {
     sprint_mul = 1.75,
     debug_hud = true,
     debug_print = false,
-    debug_print_hz = 4.0
+    debug_print_hz = 4.0,
+
+    -- Spawn example (Lua): press O to spawn one entity
+    debug_spawn = false,
+    debug_spawn_prefab = "enemy",
+    debug_spawn_x = 3.5,
+    debug_spawn_y = 6.0
 }
 
 function init(id)
@@ -17,6 +23,7 @@ end
 
 local __acc = 0.0
 local __print_acc = 0.0
+local __spawn_was_down = false
 
 function update(id, dt)
     __acc = __acc + dt
@@ -58,6 +65,14 @@ function update(id, dt)
     if engine.input.is_key_down(80) then -- MLX_KEY_P
         engine.audio.play("test")
     end
+
+    -- Instantiate example: press O once (edge-triggered)
+    local spawn_down = engine.input.is_key_down(79) -- MLX_KEY_O
+    if export.debug_spawn and spawn_down and (not __spawn_was_down) then
+        local new_id = engine.entity.instantiate(export.debug_spawn_prefab, export.debug_spawn_x, export.debug_spawn_y)
+        print("spawn", export.debug_spawn_prefab, "id=", new_id)
+    end
+    __spawn_was_down = spawn_down
 
     -- World query example
     local wall_ahead = engine.world.is_wall(1, 1)

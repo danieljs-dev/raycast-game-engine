@@ -449,9 +449,14 @@ static void	ui_entities(t_editor *ed)
 	t_entity	*e;
 	char		label[128];
 	static std::string	add_prefab;
+	static float		add_x = 1.5f;
+	static float		add_y = 1.5f;
+	static uint32_t		add_anchor_id = 0;
 	std::vector<std::string>	prefab_names;
 	t_prefab				*p;
 	uint32_t				new_id;
+	t_entity				*anchor;
+	uint32_t				anchor_id;
 
 	engine = editor_runtime_engine(&ed->rt);
 	igBegin("Hierarchy", NULL, 0);
@@ -469,6 +474,19 @@ static void	ui_entities(t_editor *ed)
 	}
 	if (add_prefab.empty() && !prefab_names.empty())
 		add_prefab = prefab_names[0];
+	anchor_id = ed->selected_entity;
+	anchor = entity_get(&engine->scene.store, anchor_id);
+	if (!anchor)
+	{
+		anchor_id = engine->player_id;
+		anchor = entity_get(&engine->scene.store, anchor_id);
+	}
+	if (anchor && add_anchor_id != anchor_id)
+	{
+		add_anchor_id = anchor_id;
+		add_x = (float)anchor->transform.x;
+		add_y = (float)anchor->transform.y;
+	}
 	ImGui::TextUnformatted("Add Entity");
 	ImGui::SameLine(0.0f, 8.0f);
 	if (ImGui::BeginCombo("##add_entity_prefab",
@@ -485,19 +503,17 @@ static void	ui_entities(t_editor *ed)
 		ImGui::EndCombo();
 	}
 	ImGui::SameLine(0.0f, 8.0f);
+	ImGui::SetNextItemWidth(90.0f);
+	ImGui::DragFloat("X##add_entity_x", &add_x, 0.05f, -10000.0f, 10000.0f, "%.2f");
+	ImGui::SameLine(0.0f, 8.0f);
+	ImGui::SetNextItemWidth(90.0f);
+	ImGui::DragFloat("Y##add_entity_y", &add_y, 0.05f, -10000.0f, 10000.0f, "%.2f");
+	ImGui::SameLine(0.0f, 8.0f);
 	if (ImGui::Button("Add Entity")
 		&& !add_prefab.empty())
 	{
-		double x = 1.5;
-		double y = 1.5;
-		t_entity *anchor = entity_get(&engine->scene.store, ed->selected_entity);
-		if (!anchor)
-			anchor = entity_get(&engine->scene.store, engine->player_id);
-		if (anchor)
-		{
-			x = anchor->transform.x;
-			y = anchor->transform.y;
-		}
+		double x = (double)add_x;
+		double y = (double)add_y;
 		new_id = lua_engine_entity_instantiate(&engine->lua,
 			add_prefab.c_str(), x, y);
 		if (new_id != 0)
