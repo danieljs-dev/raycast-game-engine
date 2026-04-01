@@ -1,3 +1,7 @@
 [submodule "lib/MLX42"]
     path = lib/MLX42
     url = https://github.com/codam-coding-college/MLX42.git
+
+[submodule "lib/cimgui"]
+    path = lib/cimgui
+    url = https://github.com/cimgui/cimgui.git
