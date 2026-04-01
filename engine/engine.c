@@ -465,9 +465,13 @@ int	engine_reload_scripts(t_engine *engine)
 	t_entity	*e;
 	t_lua_script	*s;
 	mlx_t		*mlx;
+	void		(*log_fn)(void *user, const char *line);
+	void		*log_user;
 
 	if (!engine)
 		return (0);
+	log_fn = engine->lua.log_fn;
+	log_user = engine->lua.log_user;
 	mlx = NULL;
 	if (engine->app.mlx.ptr)
 		mlx = (mlx_t *)engine->app.mlx.ptr;
@@ -482,6 +486,8 @@ int	engine_reload_scripts(t_engine *engine)
 	lua_engine_destroy(&engine->lua);
 	if (!lua_engine_init(&engine->lua, &engine->scene.store))
 		return (0);
+	if (log_fn)
+		lua_engine_set_logger(&engine->lua, log_fn, log_user);
 	lua_engine_set_prefabs(&engine->lua, &engine->prefabs);
 	lua_engine_set_world(&engine->lua, &engine->file);
 	lua_engine_set_player_id(&engine->lua, engine->player_id);
