@@ -17,6 +17,62 @@
 
 #include "engine/json.h"
 #include "engine/scene/scene_io.h"
+#include "engine/scene/entity.h"
+
+static int	load_properties_overwrite(t_property **dst, const t_json *props)
+{
+	int			len;
+	int			i;
+	const char	*k;
+	t_json		*v;
+	t_json_type	t;
+
+	if (!dst || !props || json_type(props) != JSON_OBJECT)
+		return (1);
+	len = json_obj_len(props);
+	i = 0;
+	while (i < len)
+	{
+		k = json_obj_key_at(props, i);
+		v = json_obj_val_at(props, i);
+		t = json_type(v);
+		if (k && t == JSON_NUMBER)
+			prop_set_number(dst, k, json_as_number(v));
+		else if (k && t == JSON_BOOL)
+			prop_set_bool(dst, k, json_as_bool(v));
+		else if (k && t == JSON_STRING)
+			prop_set_string(dst, k, json_as_string(v));
+		i++;
+	}
+	return (1);
+}
+
+static t_json	*props_to_json_obj(t_property *props)
+{
+	t_json		*obj;
+	t_property	*p;
+
+	obj = json_new_object();
+	if (!obj)
+		return (NULL);
+	p = props;
+	while (p)
+	{
+		if (p->key && p->key[0] == '_' && p->key[1] == '_')
+		{
+			p = p->next;
+			continue ;
+		}
+		if (p->type == PROP_NUMBER)
+			json_obj_set(obj, p->key, json_new_number(p->v.n));
+		else if (p->type == PROP_BOOL)
+			json_obj_set(obj, p->key, json_new_bool(p->v.b != 0));
+		else if (p->type == PROP_STRING)
+			json_obj_set(obj, p->key, json_new_string(p->v.s ? p->v.s : ""));
+		p = p->next;
+	}
+	return (obj);
+}
 
 static void	engine_zero(t_engine *engine)
 {
@@ -268,6 +324,14 @@ int	engine_load_project(t_engine *engine, const char *project_path)
 		return (json_free(root), ft_print_error("malloc failed"), 0);
 	if (!create_player_entity(engine, player_prefab))
 		return (json_free(root), ft_print_error("failed to create player"), 0);
+	{
+		t_entity	*player_ent;
+
+		player_ent = entity_get(&engine->scene.store, engine->player_id);
+		if (player_ent)
+			load_properties_overwrite(&player_ent->properties,
+				json_obj_get(root, "player_overrides"));
+	}
 	scene_path = json_as_string(json_obj_get(root, "scene"));
 	if (scene_path && *scene_path)
 	{
@@ -294,20 +358,46 @@ static t_json	*rgb_to_json(t_rgb c)
 	return (arr);
 }
 
-static t_json	*map_to_json(t_file *file)
+static char	spawn_char_at(t_engine *engine, int x, int y)
+{
+	if (!engine)
+		return ('\0');
+	if (engine->app.spawn_x == x && engine->app.spawn_y == y)
+		return (engine->app.spawn_dir);
+	return ('\0');
+}
+
+static t_json	*map_to_json(t_engine *engine)
 {
 	t_json	*arr;
 	int		i;
+	char	*line;
+	char	c;
+	int		len;
 
-	if (!file || !file->map)
+	if (!engine || !engine->file.map)
 		return (NULL);
 	arr = json_new_array();
 	if (!arr)
 		return (NULL);
 	i = 0;
-	while (file->map[i])
+	while (engine->file.map[i])
 	{
-		json_arr_push(arr, json_new_string(file->map[i]));
+		line = ft_strdup(engine->file.map[i]);
+		if (!line)
+			return (json_free(arr), NULL);
+		if (engine->app.spawn_y == i && engine->app.spawn_x >= 0)
+		{
+			len = (int)ft_strlen(line);
+			if (engine->app.spawn_x < len)
+			{
+				c = spawn_char_at(engine, engine->app.spawn_x, i);
+				if (c)
+					line[engine->app.spawn_x] = c;
+			}
+		}
+		json_arr_push(arr, json_new_string(line));
+		free(line);
 		i++;
 	}
 	return (arr);
@@ -319,13 +409,15 @@ int	engine_save_project(t_engine *engine)
 	t_json	*tex;
 	t_json	*colors;
 	t_json	*map;
+	t_entity	*player_ent;
+	t_json	*player_overrides;
 
 	if (!engine || !engine->project_path)
 		return (0);
 	root = json_new_object();
 	tex = json_new_object();
 	colors = json_new_object();
-	map = map_to_json(&engine->file);
+	map = map_to_json(engine);
 	if (!root || !tex || !colors || !map)
 		return (json_free(root), json_free(tex), json_free(colors), json_free(map),
 			0);
@@ -338,6 +430,14 @@ int	engine_save_project(t_engine *engine)
 	json_obj_set(root, "textures", tex);
 	json_obj_set(root, "colors", colors);
 	json_obj_set(root, "map", map);
+	player_ent = entity_get(&engine->scene.store, engine->player_id);
+	if (player_ent)
+	{
+		player_overrides = props_to_json_obj(player_ent->properties);
+		if (!player_overrides)
+			return (json_free(root), 0);
+		json_obj_set(root, "player_overrides", player_overrides);
+	}
 	if (engine->prefabs_dir)
 		json_obj_set(root, "prefabs_dir", json_new_string(engine->prefabs_dir));
 	if (engine->player_prefab)

@@ -82,6 +82,8 @@ static int	entity_from_json(t_entity_store *store, t_prefab_db *prefabs,
 		prefab = json_as_string(json_obj_get(j, "type"));
 	if (!prefab)
 		return (0);
+	if (ft_strcmp(prefab, "root") == 0)
+		return (1);
 	e = prefab_instantiate(prefabs, store, prefab,
 		json_as_number(json_obj_get(j, "x")),
 		json_as_number(json_obj_get(j, "y")));
@@ -175,6 +177,11 @@ int	scene_save_instances(t_entity_store *store, const char *scene_path,
 		e = entity_get(store, id);
 		if (e && e->id != skip_id)
 		{
+			if (e->type && ft_strcmp(e->type, "root") == 0)
+			{
+				id++;
+				continue ;
+			}
 			if (!push_entity_json(arr, e))
 				return (json_free(root), 0);
 		}

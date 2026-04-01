@@ -34,6 +34,8 @@ struct s_lua_engine
 	mlx_t			*mlx;
 	t_file			*world;
 	uint32_t		player_id;
+	void			(*log_fn)(void *user, const char *line);
+	void			*log_user;
 	void			**ui_images;
 	int				ui_count;
 	int				ui_cap;
@@ -45,6 +47,8 @@ void	lua_engine_destroy(t_lua_engine *lua);
 void	lua_engine_set_mlx(t_lua_engine *lua, mlx_t *mlx);
 void	lua_engine_set_world(t_lua_engine *lua, t_file *world);
 void	lua_engine_set_player_id(t_lua_engine *lua, uint32_t id);
+void	lua_engine_set_logger(t_lua_engine *lua,
+		void (*fn)(void *user, const char *line), void *user);
 
 void	lua_engine_begin_frame(t_lua_engine *lua);
 

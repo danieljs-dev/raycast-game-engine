@@ -13,10 +13,45 @@
 #include "editor/editor_runtime.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include "engine/engine.h"
 
 #include "cub3d.h"
+
+static void	rt_log_push(t_editor_runtime *rt, const char *line)
+{
+	int	idx;
+
+	if (!rt || !line)
+		return ;
+	idx = rt->log_head % 256;
+	strncpy(rt->logs[idx], line, 511);
+	rt->logs[idx][511] = '\0';
+	rt->log_head = (rt->log_head + 1) % 256;
+	if (rt->log_head == rt->log_tail)
+		rt->log_tail = (rt->log_tail + 1) % 256;
+}
+
+static void	lua_logger_cb(void *user, const char *line)
+{
+	rt_log_push((t_editor_runtime *)user, line);
+}
+
+int	editor_runtime_log_pop(t_editor_runtime *rt, char *out, int out_cap)
+{
+	int	idx;
+
+	if (!rt || !out || out_cap <= 0)
+		return (0);
+	if (rt->log_tail == rt->log_head)
+		return (0);
+	idx = rt->log_tail % 256;
+	strncpy(out, rt->logs[idx], (size_t)out_cap - 1);
+	out[out_cap - 1] = '\0';
+	rt->log_tail = (rt->log_tail + 1) % 256;
+	return (1);
+}
 
 int	editor_runtime_init(t_editor_runtime *rt, mlx_t *mlx,
 		const char *project_path)
@@ -27,11 +62,14 @@ int	editor_runtime_init(t_editor_runtime *rt, mlx_t *mlx,
 		return (0);
 	rt->engine = NULL;
 	rt->play_mode = 0;
+	rt->log_head = 0;
+	rt->log_tail = 0;
 	engine = (t_engine *)calloc(1, sizeof(*engine));
 	if (!engine)
 		return (0);
 	if (!engine_init(engine))
 		return (free(engine), 0);
+	lua_engine_set_logger(&engine->lua, lua_logger_cb, rt);
 	if (!engine_load_project(engine, project_path))
 		return (engine_destroy(engine), free(engine), 0);
 	engine->app.file = &engine->file;

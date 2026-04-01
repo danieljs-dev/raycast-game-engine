@@ -6,6 +6,8 @@ CXX			= c++
 GCC			= gcc-10
 CFLAGS		= -Wall -Wextra -Werror -g
 CXXFLAGS	= -Wall -Wextra -Werror -g -std=c++11 -fno-exceptions -fno-rtti
+VENDOR_CXXFLAGS	= -Wall -Wextra -g -std=c++11 -fno-exceptions -fno-rtti \
+			-Wno-reorder -Wno-sign-compare -Wno-unused-variable -Wno-sequence-point
 RM			= rm -rf
 
 SRC_DIR		= src
@@ -38,6 +40,9 @@ LDFLAGS		= -ldl -lglfw -pthread -lm $(LUA_LIBS)
 IMGUI_DIR	= lib/cimgui
 IMGUI_INC	= -I $(IMGUI_DIR) -I $(IMGUI_DIR)/imgui -I $(IMGUI_DIR)/imgui/backends
 IMGUI_DEFS	= -DCIMGUI_USE_GLFW -DCIMGUI_USE_OPENGL3 -DIMGUI_IMPL_OPENGL_LOADER_GLAD
+
+IMTEXT_DIR	= lib/cimgui_colortextedit
+IMTEXT_INC	= -I $(IMTEXT_DIR) -I $(IMTEXT_DIR)/ImGuiColorTextEdit
 
 SRCS		= $(SRC_DIR)/main.c \
 			  engine/engine.c \
@@ -115,7 +120,9 @@ EDITOR_CPP_SRCS	= $(IMGUI_DIR)/cimgui.cpp \
 			  $(IMGUI_DIR)/imgui/imgui_tables.cpp \
 			  $(IMGUI_DIR)/imgui/imgui_widgets.cpp \
 			  $(IMGUI_DIR)/imgui/backends/imgui_impl_glfw.cpp \
-			  $(IMGUI_DIR)/imgui/backends/imgui_impl_opengl3.cpp
+			  $(IMGUI_DIR)/imgui/backends/imgui_impl_opengl3.cpp \
+			  $(IMTEXT_DIR)/ImGuiColorTextEdit/TextEditor.cpp \
+			  $(IMTEXT_DIR)/cimcolortextedit.cpp
 
 EDITOR_OBJS		= $(patsubst %.cpp,$(OBJ_DIR)/%.o,$(EDITOR_C_SRCS)) \
 			  $(patsubst %.c,$(OBJ_DIR)/%.o,$(EDITOR_EMBED_SRCS)) \
@@ -167,7 +174,12 @@ ${OBJ_DIR}/%.o: %.c
 
 ${OBJ_DIR}/%.o: %.cpp
 	mkdir -p ${@D}
-	${CXX} ${CXXFLAGS} ${INCLUDE} $(IMGUI_INC) $(IMGUI_DEFS) -c $< -o $@
+	${CXX} ${CXXFLAGS} ${INCLUDE} $(IMGUI_INC) $(IMTEXT_INC) $(IMGUI_DEFS) -c $< -o $@
+
+# Vendor libs: compile without -Werror (upstream warnings)
+${OBJ_DIR}/lib/cimgui_colortextedit/%.o: lib/cimgui_colortextedit/%.cpp
+	mkdir -p ${@D}
+	${CXX} ${VENDOR_CXXFLAGS} ${INCLUDE} $(IMGUI_INC) $(IMTEXT_INC) $(IMGUI_DEFS) -c $< -o $@
 
 # ======================== TESTS =========================
 ${OBJ_DIR}/%.test.o: %.c

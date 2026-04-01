@@ -24,6 +24,9 @@ typedef struct s_editor_runtime
 {
 	t_engine	*engine;
 	int			play_mode;
+	char		logs[256][512];
+	int			log_head;
+	int			log_tail;
 } 	t_editor_runtime;
 
 int		editor_runtime_init(t_editor_runtime *rt, mlx_t *mlx,
@@ -38,5 +41,7 @@ void	editor_runtime_render(t_editor_runtime *rt);
 mlx_image_t	*editor_runtime_frame_image(t_editor_runtime *rt);
 uint32_t		editor_runtime_player_id(t_editor_runtime *rt);
 t_engine		*editor_runtime_engine(t_editor_runtime *rt);
+
+int			editor_runtime_log_pop(t_editor_runtime *rt, char *out, int out_cap);
 
 #endif

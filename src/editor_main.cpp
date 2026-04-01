@@ -34,6 +34,10 @@
 #include "cimgui.h"
 
 extern "C" {
+#include "cimcolortextedit.h"
+}
+
+extern "C" {
 #include "editor/editor_runtime.h"
 #include "engine/engine.h"
 }
@@ -48,7 +52,71 @@ typedef struct s_editor
 	uint32_t			selected_entity;
 	std::vector<std::string>	logs;
 	char				project_path[256];
+	TextEditor			*script_editor;
+	std::string			script_open_path;
 } 	t_editor;
+
+static bool	ends_with(const std::string &s, const char *suffix)
+{
+	std::size_t	ls;
+	std::size_t	lf;
+
+	if (!suffix)
+		return (false);
+	lf = std::strlen(suffix);
+	ls = s.size();
+	if (lf > ls)
+		return (false);
+	return (s.compare(ls - lf, lf, suffix) == 0);
+}
+
+static bool	read_file_text(const char *path, std::string &out)
+{
+	FILE	*fp;
+	long	sz;
+	char	*buf;
+
+	out.clear();
+	if (!path)
+		return (false);
+	fp = std::fopen(path, "rb");
+	if (!fp)
+		return (false);
+	if (std::fseek(fp, 0, SEEK_END) != 0)
+		return (std::fclose(fp), false);
+	sz = std::ftell(fp);
+	if (sz < 0)
+		return (std::fclose(fp), false);
+	if (std::fseek(fp, 0, SEEK_SET) != 0)
+		return (std::fclose(fp), false);
+	buf = (char *)std::malloc((size_t)sz + 1);
+	if (!buf)
+		return (std::fclose(fp), false);
+	if (sz > 0 && std::fread(buf, 1, (size_t)sz, fp) != (size_t)sz)
+		return (std::free(buf), std::fclose(fp), false);
+	buf[sz] = '\0';
+	out.assign(buf);
+	std::free(buf);
+	std::fclose(fp);
+	return (true);
+}
+
+static bool	write_file_text(const char *path, const char *text)
+{
+	FILE	*fp;
+	size_t	len;
+
+	if (!path || !text)
+		return (false);
+	fp = std::fopen(path, "wb");
+	if (!fp)
+		return (false);
+	len = std::strlen(text);
+	if (len > 0 && std::fwrite(text, 1, len, fp) != len)
+		return (std::fclose(fp), false);
+	std::fclose(fp);
+	return (true);
+}
 
 static ImVec2_c	v2(float x, float y)
 {
@@ -106,6 +174,31 @@ static void	gl_tex_update(t_editor *ed, const mlx_image_t *img)
 		GL_RGBA, GL_UNSIGNED_BYTE, img->pixels);
 }
 
+static void	ensure_default_scene_path(t_editor *ed, t_engine *engine)
+{
+	struct stat	st;
+	const char	*base;
+	const char	*slash;
+	std::string	name;
+	std::string	scene;
+	std::size_t	dot;
+
+	if (!ed || !engine || engine->scene_path || !engine->project_path)
+		return ;
+	if (stat("scenes", &st) != 0)
+		mkdir("scenes", 0755);
+	slash = std::strrchr(engine->project_path, '/');
+	base = slash ? slash + 1 : engine->project_path;
+	name = std::string(base);
+	dot = name.rfind('.');
+	if (dot != std::string::npos)
+		name = name.substr(0, dot);
+	scene = std::string("scenes/") + name + ".scene.json";
+	engine->scene_path = strdup(scene.c_str());
+	if (engine->scene_path)
+		logf(ed, "scene: %s", engine->scene_path);
+}
+
 static void	ui_toolbar_bar(t_editor *ed)
 {
 	bool		play;
@@ -132,6 +225,7 @@ static void	ui_toolbar_bar(t_editor *ed)
 	want_export = ImGui::Button("Build/Export");
 	if (engine && want_save)
 	{
+		ensure_default_scene_path(ed, engine);
 		if (!engine_save_scene(engine) || !engine_save_project(engine))
 			logf(ed, "save failed");
 		else
@@ -216,6 +310,7 @@ static void	ui_dockspace(t_editor *ed)
 		ImGui::DockBuilderDockWindow("Inspector", right);
 		ImGui::DockBuilderDockWindow("Scene", center);
 		ImGui::DockBuilderDockWindow("Scene View", center);
+		ImGui::DockBuilderDockWindow("Script Editor", center);
 		ImGui::DockBuilderDockWindow("Content Drawer", bottom);
 		ImGui::DockBuilderDockWindow("Console", bottom);
 		ImGui::DockBuilderDockWindow("File System", bottom);
@@ -252,7 +347,7 @@ static void	ui_preview(t_editor *ed)
 		}
 		igImage(tex,
 			v2(w * scale, h * scale),
-			v2(0, 1), v2(1, 0));
+			v2(0, 0), v2(1, 1));
 	}
 	else
 		igText("preview not ready");
@@ -325,12 +420,12 @@ static void	ui_scene_view(t_editor *ed)
 			if (x < line_len)
 				v = engine->file.map[y][x];
 			col = IM_COL32(40, 40, 40, 255);
+			if (engine->app.spawn_x == x && engine->app.spawn_y == y)
+				col = IM_COL32(20, 80, 140, 255);
 			if (v == '1')
 				col = IM_COL32(120, 120, 120, 255);
 			else if (v == '0')
 				col = IM_COL32(20, 20, 20, 255);
-			else if (v == 'N' || v == 'S' || v == 'E' || v == 'W')
-				col = IM_COL32(20, 80, 140, 255);
 			dl->AddRectFilled(p0, p1, col);
 			dl->AddRect(p0, p1, IM_COL32(60, 60, 60, 255));
 			x++;
@@ -341,7 +436,8 @@ static void	ui_scene_view(t_editor *ed)
 	{
 		int gx = (int)((mouse.x - origin.x) / cell);
 		int gy = (int)((mouse.y - origin.y) / cell);
-		toggle_cell(engine, gx, gy);
+		if (gx != engine->app.spawn_x || gy != engine->app.spawn_y)
+			toggle_cell(engine, gx, gy);
 	}
 	igEnd();
 }
@@ -386,6 +482,31 @@ static void	ui_inspector(t_editor *ed)
 	igBegin("Inspector", NULL, 0);
 	if (!engine)
 		return (igEnd());
+	igText("Project");
+	{
+		float	floor_col[3];
+		float	ceil_col[3];
+
+		floor_col[0] = (float)engine->app.floor.r / 255.0f;
+		floor_col[1] = (float)engine->app.floor.g / 255.0f;
+		floor_col[2] = (float)engine->app.floor.b / 255.0f;
+		ceil_col[0] = (float)engine->app.ceiling.r / 255.0f;
+		ceil_col[1] = (float)engine->app.ceiling.g / 255.0f;
+		ceil_col[2] = (float)engine->app.ceiling.b / 255.0f;
+		if (igColorEdit3("floor", floor_col, 0))
+		{
+			engine->app.floor.r = (int)(floor_col[0] * 255.0f + 0.5f);
+			engine->app.floor.g = (int)(floor_col[1] * 255.0f + 0.5f);
+			engine->app.floor.b = (int)(floor_col[2] * 255.0f + 0.5f);
+		}
+		if (igColorEdit3("ceiling", ceil_col, 0))
+		{
+			engine->app.ceiling.r = (int)(ceil_col[0] * 255.0f + 0.5f);
+			engine->app.ceiling.g = (int)(ceil_col[1] * 255.0f + 0.5f);
+			engine->app.ceiling.b = (int)(ceil_col[2] * 255.0f + 0.5f);
+		}
+	}
+	igSeparator();
 	e = entity_get(&engine->scene.store, ed->selected_entity);
 	if (!e)
 		return (igText("select an entity"), igEnd());
@@ -496,6 +617,85 @@ static void	ui_assets(t_editor *ed)
 	igEnd();
 }
 
+static void	ui_script_editor(t_editor *ed)
+{
+	std::vector<std::string>	items;
+	int						i;
+	std::string					path;
+	std::string					content;
+	ImVec2						avail;
+	bool						want_save;
+	bool						want_reload;
+
+	if (!ed)
+		return ;
+	igBegin("Script Editor", NULL, 0);
+	if (!ed->script_editor)
+		ed->script_editor = ImColorTextEdit_TextEditor();
+	want_save = igButton("Save", v2(0, 0));
+	igSameLine(0.0f, 8.0f);
+	want_reload = igButton("Reload", v2(0, 0));
+	igSeparator();
+	igBeginChild_Str("##scripts", v2(220, 0), true, 0);
+	items.clear();
+	list_dir_simple("scripts", items);
+	i = 0;
+	while (i < (int)items.size())
+	{
+		if (!ends_with(items[i], ".lua"))
+		{
+			i++;
+			continue ;
+		}
+		if (igSelectable_Bool(items[i].c_str(),
+			ed->script_open_path == (std::string("scripts/") + items[i]), 0, v2(0, 0)))
+		{
+			path = std::string("scripts/") + items[i];
+			if (read_file_text(path.c_str(), content))
+			{
+				ed->script_open_path = path;
+				ImColorTextEdit_TextEditor_SetText(ed->script_editor, content.c_str());
+				logf(ed, "script opened: %s", path.c_str());
+			}
+			else
+				logf(ed, "script open failed: %s", path.c_str());
+		}
+		i++;
+	}
+	igEndChild();
+	igSameLine(0.0f, 8.0f);
+	igBeginGroup();
+	if (ed->script_open_path.empty())
+		igText("Select a script in scripts/");
+	else
+	{
+		igText("Editing: %s", ed->script_open_path.c_str());
+		avail = ImGui::GetContentRegionAvail();
+		ImColorTextEdit_TextEditor_RenderSizeBorder(ed->script_editor,
+			"##cte", &avail, true);
+		if (want_reload)
+		{
+			if (read_file_text(ed->script_open_path.c_str(), content))
+			{
+				ImColorTextEdit_TextEditor_SetText(ed->script_editor, content.c_str());
+				logf(ed, "script reloaded: %s", ed->script_open_path.c_str());
+			}
+			else
+				logf(ed, "script reload failed: %s", ed->script_open_path.c_str());
+		}
+		if (want_save)
+		{
+			const char	*txt = ImColorTextEdit_TextEditor_GetText(ed->script_editor);
+			if (txt && write_file_text(ed->script_open_path.c_str(), txt))
+				logf(ed, "script saved: %s", ed->script_open_path.c_str());
+			else
+				logf(ed, "script save failed: %s", ed->script_open_path.c_str());
+		}
+	}
+	igEndGroup();
+	igEnd();
+}
+
 static void	uifs_node(const char *path)
 {
 	DIR			*dir;
@@ -554,10 +754,13 @@ static void	editor_frame(void *param)
 	t_editor	*ed;
 	mlx_image_t	*img;
 	double		dt;
+	char		line[512];
 
 	ed = (t_editor *)param;
 	dt = ed->mlx->delta_time;
 	editor_runtime_tick(&ed->rt, dt);
+	while (editor_runtime_log_pop(&ed->rt, line, (int)sizeof(line)))
+		ed->logs.push_back(std::string(line));
 	editor_runtime_render(&ed->rt);
 	img = editor_runtime_frame_image(&ed->rt);
 	if (img)
@@ -571,6 +774,7 @@ static void	editor_frame(void *param)
 	ui_entities(ed);
 	ui_inspector(ed);
 	ui_assets(ed);
+	ui_script_editor(ed);
 	ui_filesystem(ed);
 	ui_console(ed);
 	igRender();
@@ -589,6 +793,8 @@ static int	editor_init(t_editor *ed)
 	ed->preview_h = 0;
 	ed->selected_entity = 0;
 	ed->logs.clear();
+	ed->script_editor = NULL;
+	ed->script_open_path.clear();
 	std::snprintf(ed->project_path, sizeof(ed->project_path), "%s",
 		"maps/level01.json");
 	ed->mlx = mlx_init(1280, 720, "Raycast Editor", true);
@@ -621,6 +827,10 @@ static void	editor_destroy(t_editor *ed)
 	if (!ed)
 		return ;
 	editor_runtime_destroy(&ed->rt);
+	if (ed->script_editor)
+		ImColorTextEdit_destroy(ed->script_editor);
+	ed->script_editor = NULL;
+	ed->script_open_path.clear();
 	if (ed->preview_tex != 0)
 		glDeleteTextures(1, &ed->preview_tex);
 	ImGui_ImplOpenGL3_Shutdown();

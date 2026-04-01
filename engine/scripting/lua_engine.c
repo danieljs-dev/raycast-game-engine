@@ -14,23 +14,112 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <math.h>
+#include <stdio.h>
 
 #include <MLX42/MLX42.h>
 
 #include "engine/scene/entity.h"
 #include "structs.h"
 #include "libft.h"
+#include "config.h"
 
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
 
-static void	lua_log(const char *msg)
+static void	lua_log_ex(t_lua_engine *lua, const char *msg)
 {
-	if (!msg)
+	if (!msg || msg[0] == '\0')
 		return ;
+	if (lua && lua->log_fn)
+		return (lua->log_fn(lua->log_user, msg));
 	write(2, msg, ft_strlen(msg));
 	write(2, "\n", 1);
+}
+
+static int	l_print(lua_State *L)
+{
+	t_lua_engine	*lua;
+	int			n;
+	int			i;
+	const char		*s;
+	char			buf[1024];
+	int			off;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	n = lua_gettop(L);
+	off = 0;
+	i = 1;
+	while (i <= n)
+	{
+		s = lua_tostring(L, i);
+		if (!s)
+			s = luaL_tolstring(L, i, NULL);
+		if (s)
+		{
+			off += snprintf(buf + off, sizeof(buf) - (size_t)off,
+				"%s%s", (i > 1) ? "\t" : "", s);
+			if (off >= (int)sizeof(buf) - 1)
+				break ;
+		}
+		if (lua_type(L, i) != LUA_TSTRING)
+			lua_pop(L, 1);
+		i++;
+	}
+	buf[sizeof(buf) - 1] = '\0';
+	lua_log_ex(lua, buf);
+	return (0);
+}
+
+static void	lua_entity_move_impl(t_lua_engine *lua, uint32_t id, t_entity *e,
+		double dx, double dy)
+{
+	if (!lua || !e)
+		return ;
+	if (lua->world && id == lua->player_id)
+	{
+		double	nx;
+		double	ny;
+		double	r;
+		int		mx;
+		int		my;
+		int		blocked;
+
+		r = PLAYER_COLLISION_RADIUS;
+
+		blocked = 0;
+		nx = e->transform.x + dx;
+		ny = e->transform.y;
+		mx = (int)(nx + (dx > 0.0 ? r : -r));
+		my = (int)(ny);
+		if (my < 0 || my >= lua->world->map_height
+			|| mx < 0 || mx >= lua->world->map_width)
+			blocked = 1;
+		else if (lua->world->map[my]
+			&& mx < (int)ft_strlen(lua->world->map[my])
+			&& lua->world->map[my][mx] == '1')
+			blocked = 1;
+		if (!blocked)
+			e->transform.x = nx;
+
+		blocked = 0;
+		nx = e->transform.x;
+		ny = e->transform.y + dy;
+		mx = (int)(nx);
+		my = (int)(ny + (dy > 0.0 ? r : -r));
+		if (my < 0 || my >= lua->world->map_height
+			|| mx < 0 || mx >= lua->world->map_width)
+			blocked = 1;
+		else if (lua->world->map[my]
+			&& mx < (int)ft_strlen(lua->world->map[my])
+			&& lua->world->map[my][mx] == '1')
+			blocked = 1;
+		if (!blocked)
+			e->transform.y = ny;
+		return ;
+	}
+	entity_move(e, dx, dy);
 }
 
 static int	l_entity_move(lua_State *L)
@@ -49,7 +138,36 @@ static int	l_entity_move(lua_State *L)
 	dy = (double)luaL_checknumber(L, 3);
 	e = entity_get(lua->store, id);
 	if (e)
-		entity_move(e, dx, dy);
+		lua_entity_move_impl(lua, id, e, dx, dy);
+	return (0);
+}
+
+static int	l_entity_move_local(lua_State *L)
+{
+	t_lua_engine	*lua;
+	uint32_t		id;
+	double			forward;
+	double			strafe;
+	t_entity		*e;
+	double			cs;
+	double			sn;
+	double			dx;
+	double			dy;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua || !lua->store)
+		return (0);
+	id = (uint32_t)luaL_checkinteger(L, 1);
+	forward = (double)luaL_checknumber(L, 2);
+	strafe = (double)luaL_checknumber(L, 3);
+	e = entity_get(lua->store, id);
+	if (!e)
+		return (0);
+	cs = cos(e->transform.rot);
+	sn = sin(e->transform.rot);
+	dx = (forward * cs) + (strafe * -sn);
+	dy = (forward * sn) + (strafe * cs);
+	lua_entity_move_impl(lua, id, e, dx, dy);
 	return (0);
 }
 
@@ -188,6 +306,9 @@ static void	register_engine_api(t_lua_engine *lua)
 	lua_pushcclosure(L, l_entity_move, 1);
 	lua_setfield(L, -2, "move");
 	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_entity_move_local, 1);
+	lua_setfield(L, -2, "move_local");
+	lua_pushlightuserdata(L, lua);
 	lua_pushcclosure(L, l_entity_rotate, 1);
 	lua_setfield(L, -2, "rotate");
 	lua_setfield(L, -2, "entity");
@@ -227,6 +348,11 @@ static void	register_engine_api(t_lua_engine *lua)
 	lua_setfield(L, -2, "ui");
 
 	lua_setglobal(L, "engine");
+
+	/* Override global print() to go through engine logger (editor console). */
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_print, 1);
+	lua_setglobal(L, "print");
 }
 
 int	lua_engine_init(t_lua_engine *lua, t_entity_store *store)
@@ -245,11 +371,22 @@ int	lua_engine_init(t_lua_engine *lua, t_entity_store *store)
 	lua->mlx = NULL;
 	lua->world = NULL;
 	lua->player_id = 0;
+	lua->log_fn = NULL;
+	lua->log_user = NULL;
 	lua->ui_images = NULL;
 	lua->ui_count = 0;
 	lua->ui_cap = 0;
 	register_engine_api(lua);
 	return (1);
+}
+
+void	lua_engine_set_logger(t_lua_engine *lua,
+		void (*fn)(void *user, const char *line), void *user)
+{
+	if (!lua)
+		return ;
+	lua->log_fn = fn;
+	lua->log_user = user;
 }
 
 void	lua_engine_destroy(t_lua_engine *lua)
@@ -334,7 +471,8 @@ int	lua_script_load(t_lua_engine *lua, t_lua_script *out, const char *path)
 		return (0);
 	status = luaL_loadfile(L, path);
 	if (status != LUA_OK)
-		return (lua_log(lua_tostring(L, -1)), lua_pop(L, 1), free(out->path), 0);
+		return (lua_log_ex(lua, lua_tostring(L, -1)), lua_pop(L, 1),
+			free(out->path), 0);
 	setup_env(L);
 	/* stack: chunk, env */
 	lua_pushvalue(L, -1);
@@ -343,7 +481,8 @@ int	lua_script_load(t_lua_engine *lua, t_lua_script *out, const char *path)
 	status = lua_pcall(L, 0, 0, 0);
 	if (status != LUA_OK)
 		return (luaL_unref(L, LUA_REGISTRYINDEX, env_ref),
-			lua_log(lua_tostring(L, -1)), lua_pop(L, 1), free(out->path), 0);
+			lua_log_ex(lua, lua_tostring(L, -1)), lua_pop(L, 1),
+			free(out->path), 0);
 	out->env_ref = env_ref;
 	return (1);
 }
@@ -381,7 +520,7 @@ static void	call_entity_fn(t_lua_engine *lua, t_lua_script *script,
 	lua_insert(L, -1 - nargs);
 	if (lua_pcall(L, nargs, 0, 0) != LUA_OK)
 	{
-		lua_log(lua_tostring(L, -1));
+		lua_log_ex(lua, lua_tostring(L, -1));
 		lua_pop(L, 1);
 	}
 }
@@ -465,13 +604,68 @@ int	lua_script_apply_exports(t_lua_engine *lua, t_lua_script *script,
 	return (1);
 }
 
+static void	lua_script_sync_exports_from_props(t_lua_engine *lua,
+		t_lua_script *script, t_entity *ent)
+{
+	lua_State	*L;
+	int			env_idx;
+	int			exp_idx;
+	t_property	*p;
+
+	if (!lua || !script || !ent || script->env_ref == 0 || !lua->L)
+		return ;
+	L = (lua_State *)lua->L;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, script->env_ref);
+	env_idx = lua_gettop(L);
+	if (!push_exports_table(L, env_idx))
+		return ((void)lua_pop(L, 1));
+	exp_idx = lua_gettop(L);
+	p = ent->properties;
+	while (p)
+	{
+		if (!p->key || (p->key[0] == '_' && p->key[1] == '_'))
+		{
+			p = p->next;
+			continue ;
+		}
+		lua_getfield(L, exp_idx, p->key);
+		if (lua_isnil(L, -1))
+		{
+			lua_pop(L, 1);
+			p = p->next;
+			continue ;
+		}
+		lua_pop(L, 1);
+		if (p->type == PROP_NUMBER)
+			lua_pushnumber(L, (lua_Number)p->v.n);
+		else if (p->type == PROP_BOOL)
+			lua_pushboolean(L, p->v.b != 0);
+		else if (p->type == PROP_STRING)
+			lua_pushstring(L, p->v.s ? p->v.s : "");
+		else
+		{
+			p = p->next;
+			continue ;
+		}
+		lua_setfield(L, exp_idx, p->key);
+		p = p->next;
+	}
+	lua_pop(L, 2);
+}
+
 void	lua_call_init(t_lua_engine *lua, t_lua_script *script, uint32_t id)
 {
 	lua_State	*L;
+	t_entity	*ent;
 
 	if (!lua || !script)
 		return ;
 	L = (lua_State *)lua->L;
+	ent = NULL;
+	if (lua->store)
+		ent = entity_get(lua->store, id);
+	if (ent)
+		lua_script_sync_exports_from_props(lua, script, ent);
 	lua_pushinteger(L, (lua_Integer)id);
 	call_entity_fn(lua, script, "init", 1);
 }
@@ -479,10 +673,16 @@ void	lua_call_init(t_lua_engine *lua, t_lua_script *script, uint32_t id)
 void	lua_call_ready(t_lua_engine *lua, t_lua_script *script, uint32_t id)
 {
 	lua_State	*L;
+	t_entity	*ent;
 
 	if (!lua || !script)
 		return ;
 	L = (lua_State *)lua->L;
+	ent = NULL;
+	if (lua->store)
+		ent = entity_get(lua->store, id);
+	if (ent)
+		lua_script_sync_exports_from_props(lua, script, ent);
 	lua_pushinteger(L, (lua_Integer)id);
 	call_entity_fn(lua, script, "ready", 1);
 }
@@ -491,10 +691,16 @@ void	lua_call_update(t_lua_engine *lua, t_lua_script *script,
 		uint32_t id, double dt)
 {
 	lua_State	*L;
+	t_entity	*ent;
 
 	if (!lua || !script)
 		return ;
 	L = (lua_State *)lua->L;
+	ent = NULL;
+	if (lua->store)
+		ent = entity_get(lua->store, id);
+	if (ent)
+		lua_script_sync_exports_from_props(lua, script, ent);
 	lua_pushinteger(L, (lua_Integer)id);
 	lua_pushnumber(L, (lua_Number)dt);
 	call_entity_fn(lua, script, "update", 2);
