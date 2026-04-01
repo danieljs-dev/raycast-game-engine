@@ -95,6 +95,7 @@ int	engine_init(t_engine *engine)
 		return (scene_destroy(&engine->scene), 0);
 	if (!lua_engine_init(&engine->lua, &engine->scene.store))
 		return (prefab_db_destroy(&engine->prefabs), scene_destroy(&engine->scene), 0);
+	lua_engine_set_prefabs(&engine->lua, &engine->prefabs);
 	return (1);
 }
 
@@ -481,6 +482,7 @@ int	engine_reload_scripts(t_engine *engine)
 	lua_engine_destroy(&engine->lua);
 	if (!lua_engine_init(&engine->lua, &engine->scene.store))
 		return (0);
+	lua_engine_set_prefabs(&engine->lua, &engine->prefabs);
 	lua_engine_set_world(&engine->lua, &engine->file);
 	lua_engine_set_player_id(&engine->lua, engine->player_id);
 	lua_engine_set_mlx(&engine->lua, mlx);

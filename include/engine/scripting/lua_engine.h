@@ -17,6 +17,7 @@
 
 typedef struct s_lua_engine	t_lua_engine;
 typedef struct s_entity_store	t_entity_store;
+typedef struct s_prefab_db	t_prefab_db;
 typedef struct mlx		mlx_t;
 typedef struct s_file		t_file;
 typedef struct s_entity	t_entity;
@@ -31,6 +32,7 @@ struct s_lua_engine
 {
 	void			*L;
 	t_entity_store	*store;
+	t_prefab_db		*prefabs;
 	mlx_t			*mlx;
 	t_file			*world;
 	uint32_t		player_id;
@@ -44,6 +46,7 @@ struct s_lua_engine
 int	lua_engine_init(t_lua_engine *lua, t_entity_store *store);
 void	lua_engine_destroy(t_lua_engine *lua);
 
+void	lua_engine_set_prefabs(t_lua_engine *lua, t_prefab_db *prefabs);
 void	lua_engine_set_mlx(t_lua_engine *lua, mlx_t *mlx);
 void	lua_engine_set_world(t_lua_engine *lua, t_file *world);
 void	lua_engine_set_player_id(t_lua_engine *lua, uint32_t id);
@@ -63,5 +66,11 @@ void	lua_call_destroy(t_lua_engine *lua, t_lua_script *script, uint32_t id);
 
 int		lua_script_apply_exports(t_lua_engine *lua, t_lua_script *script,
 			t_entity *ent, int overwrite);
+
+/* Instantiates a prefab into the entity store and loads its script (if any).
+ * Returns the new entity id, or 0 on failure.
+ */
+uint32_t	lua_engine_entity_instantiate(t_lua_engine *lua,
+			const char *prefab_name, double x, double y);
 
 #endif

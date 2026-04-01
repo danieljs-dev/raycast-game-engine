@@ -448,11 +448,68 @@ static void	ui_entities(t_editor *ed)
 	uint32_t	id;
 	t_entity	*e;
 	char		label[128];
+	static std::string	add_prefab;
+	std::vector<std::string>	prefab_names;
+	t_prefab				*p;
+	uint32_t				new_id;
 
 	engine = editor_runtime_engine(&ed->rt);
 	igBegin("Hierarchy", NULL, 0);
 	if (!engine)
 		return (igEnd());
+
+	/* Add Entity */
+	prefab_names.clear();
+	p = engine->prefabs.head;
+	while (p)
+	{
+		if (p->name)
+			prefab_names.push_back(p->name);
+		p = p->next;
+	}
+	if (add_prefab.empty() && !prefab_names.empty())
+		add_prefab = prefab_names[0];
+	ImGui::TextUnformatted("Add Entity");
+	ImGui::SameLine(0.0f, 8.0f);
+	if (ImGui::BeginCombo("##add_entity_prefab",
+		add_prefab.empty() ? "(no prefabs)" : add_prefab.c_str()))
+	{
+		for (size_t i = 0; i < prefab_names.size(); ++i)
+		{
+			bool selected = (add_prefab == prefab_names[i]);
+			if (ImGui::Selectable(prefab_names[i].c_str(), selected))
+				add_prefab = prefab_names[i];
+			if (selected)
+				ImGui::SetItemDefaultFocus();
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::SameLine(0.0f, 8.0f);
+	if (ImGui::Button("Add Entity")
+		&& !add_prefab.empty())
+	{
+		double x = 1.5;
+		double y = 1.5;
+		t_entity *anchor = entity_get(&engine->scene.store, ed->selected_entity);
+		if (!anchor)
+			anchor = entity_get(&engine->scene.store, engine->player_id);
+		if (anchor)
+		{
+			x = anchor->transform.x;
+			y = anchor->transform.y;
+		}
+		new_id = lua_engine_entity_instantiate(&engine->lua,
+			add_prefab.c_str(), x, y);
+		if (new_id != 0)
+		{
+			ed->selected_entity = new_id;
+			logf(ed, "entity instantiated: %u (%s)", new_id, add_prefab.c_str());
+		}
+		else
+			logf(ed, "instantiate failed: %s", add_prefab.c_str());
+	}
+	igSeparator();
+
 	id = 1;
 	while (id < engine->scene.store.next_id)
 	{

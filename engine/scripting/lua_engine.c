@@ -20,6 +20,7 @@
 #include <MLX42/MLX42.h>
 
 #include "engine/scene/entity.h"
+#include "engine/scene/prefab.h"
 #include "structs.h"
 #include "libft.h"
 #include "config.h"
@@ -189,6 +190,51 @@ static int	l_entity_rotate(lua_State *L)
 	return (0);
 }
 
+uint32_t	lua_engine_entity_instantiate(t_lua_engine *lua,
+			const char *prefab_name, double x, double y)
+{
+	t_entity		*e;
+	t_lua_script	*s;
+
+	if (!lua || !lua->store || !lua->prefabs || !prefab_name || prefab_name[0] == '\0')
+		return (0);
+	e = prefab_instantiate(lua->prefabs, lua->store, prefab_name, x, y);
+	if (!e)
+		return (0);
+	if (e->script_path)
+	{
+		s = ft_calloc(1, sizeof(*s));
+		if (!s)
+			return (entity_destroy(lua->store, e->id), 0);
+		if (!lua_script_load(lua, s, e->script_path))
+			return (free(s), entity_destroy(lua->store, e->id), 0);
+		e->script = s;
+		lua_script_apply_exports(lua, s, e, 0);
+		lua_call_init(lua, s, e->id);
+		lua_call_ready(lua, s, e->id);
+	}
+	return (e->id);
+}
+
+static int	l_entity_instantiate(lua_State *L)
+{
+	t_lua_engine	*lua;
+	const char		*prefab;
+	double			x;
+	double			y;
+	uint32_t		id;
+
+	lua = (t_lua_engine *)lua_touserdata(L, lua_upvalueindex(1));
+	if (!lua)
+		return (lua_pushinteger(L, 0), 1);
+	prefab = luaL_checkstring(L, 1);
+	x = (double)luaL_checknumber(L, 2);
+	y = (double)luaL_checknumber(L, 3);
+	id = lua_engine_entity_instantiate(lua, prefab, x, y);
+	lua_pushinteger(L, (lua_Integer)id);
+	return (1);
+}
+
 static int	l_world_is_wall(lua_State *L)
 {
 	t_lua_engine	*lua;
@@ -311,6 +357,9 @@ static void	register_engine_api(t_lua_engine *lua)
 	lua_pushlightuserdata(L, lua);
 	lua_pushcclosure(L, l_entity_rotate, 1);
 	lua_setfield(L, -2, "rotate");
+	lua_pushlightuserdata(L, lua);
+	lua_pushcclosure(L, l_entity_instantiate, 1);
+	lua_setfield(L, -2, "instantiate");
 	lua_setfield(L, -2, "entity");
 
 	/* engine.world */
@@ -368,6 +417,7 @@ int	lua_engine_init(t_lua_engine *lua, t_entity_store *store)
 	luaL_openlibs(L);
 	lua->L = (void *)L;
 	lua->store = store;
+	lua->prefabs = NULL;
 	lua->mlx = NULL;
 	lua->world = NULL;
 	lua->player_id = 0;
@@ -378,6 +428,13 @@ int	lua_engine_init(t_lua_engine *lua, t_entity_store *store)
 	lua->ui_cap = 0;
 	register_engine_api(lua);
 	return (1);
+}
+
+void	lua_engine_set_prefabs(t_lua_engine *lua, t_prefab_db *prefabs)
+{
+	if (!lua)
+		return ;
+	lua->prefabs = prefabs;
 }
 
 void	lua_engine_set_logger(t_lua_engine *lua,

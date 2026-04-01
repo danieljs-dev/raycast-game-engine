@@ -197,6 +197,14 @@ Collision notes are the same as `move()`.
 #### `engine.entity.rotate(id, drot)`
 Rotates an entity by `drot` radians.
 
+#### `engine.entity.instantiate(prefab, x, y) -> integer`
+Instantiates an entity from a prefab and returns the new entity id.
+
+Behavior:
+- Copies prefab defaults into the entity properties.
+- If the prefab defines a script, it loads it immediately and calls `init(id)` then `ready(id)`.
+- Returns `0` on failure.
+
 ### 5.2 `engine.world`
 
 #### `engine.world.is_wall(x, y) -> boolean`
@@ -248,6 +256,10 @@ Currently a stub (no output).
 - `Reload`: reloads the file from disk.
 
 (Currently it does not automatically call “Reload scripts” after saving; you can do it from the toolbar.)
+
+### 6.4 Add Entity (Hierarchy)
+- The Hierarchy panel has an `Add Entity` control that instantiates a selected prefab.
+- Spawn position defaults to the currently selected entity position; if none is selected, it uses the player position.
 
 ## 7) Current Limitations (intentional / not implemented yet)
 
